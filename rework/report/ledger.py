@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from fractions import Fraction
 from uuid import uuid4
@@ -23,6 +24,24 @@ class ReportLedger:
                     report_id TEXT NOT NULL REFERENCES published_reports(report_id)
                 )
             ''')
+            self.connection.execute('''
+                CREATE TABLE IF NOT EXISTS audit_tickets (
+                    ticket_id TEXT PRIMARY KEY, payload TEXT NOT NULL
+                )
+            ''')
+
+    def append_audit_ticket(self, ticket: dict) -> dict:
+        from .audit_ticket import validate_audit_ticket
+
+        validate_audit_ticket(ticket)
+        payload = json.dumps(ticket, sort_keys=True, ensure_ascii=False,
+                             separators=(',', ':'))
+        self.connection.execute('BEGIN IMMEDIATE')
+        with self.connection:
+            self.connection.execute(
+                'INSERT INTO audit_tickets VALUES (?, ?)', (ticket['ticket_id'], payload)
+            )
+        return ticket
 
     def append(
         self, provenance: ReportProvenance, probability: Fraction,
@@ -50,3 +69,20 @@ def read_report(ledger: ReportLedger, report_id: str) -> ReportSnapshot:
             raise ValueError('stored report number mismatch')
         connection.execute('INSERT INTO report_receipts(report_id) VALUES (?)', (report_id,))
     return snapshot
+
+
+def read_audit_ticket(ledger: ReportLedger, ticket_id: str) -> dict:
+    if not isinstance(ticket_id, str) or not ticket_id:
+        raise ValueError('invalid audit ticket number')
+    row = ledger.connection.execute(
+        'SELECT payload FROM audit_tickets WHERE ticket_id = ?', (ticket_id,)
+    ).fetchone()
+    if row is None:
+        raise KeyError(ticket_id)
+    ticket = json.loads(row[0])
+    from .audit_ticket import validate_audit_ticket
+
+    validate_audit_ticket(ticket)
+    if ticket['ticket_id'] != ticket_id:
+        raise ValueError('stored audit ticket number mismatch')
+    return ticket

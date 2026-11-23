@@ -4,7 +4,7 @@
 
 ## 运行
 
-使用 Python 3.11 标准库及随附的 SQLite。于项目根目录运行 `python3 -B check_project.py` 执行完整回归，或运行 `python3 -B demo.py` 查看两站返流、次日更正及重开领取。回归入口由运行环境提供。演示和测试创建独立临时库。可用 `python3 -B -m unittest discover -v` 直接运行同一套测试。
+使用 Python 3.11 标准库及随附的 SQLite。于项目根目录运行 `python3 -B check_project.py` 执行完整回归并串联 AUDIT.md 抽核概率核验，或运行 `python3 -B demo.py` 查看两站返流、次日更正、重开领取以及关站签票、回站兑换、重开读回原票。单独运行 `python3 -B verify_audit.py` 只做抽核概率核验，`python3 -B audit_example.py` 输出零分钟样例的 V1 对照值与伴随件。回归入口由运行环境提供。演示和测试创建独立临时库。可用 `python3 -B -m unittest discover -v` 直接运行同一套测试。
 
 ## 白班工艺与站件
 
@@ -22,6 +22,16 @@
 - `ReportLedger(connection).initialize()` 建立中心报告与领取表，可与中心目录共享连接。`publish_assessment(catalog, ledger, route_id, start)` 按冻结路由和 `PortRef` 开工入口返回已提交的 `ReportSnapshot`。路径可返流多次，只有有限步内抵达达标终点才算达标。报废和无限返修保留其非达标质量。每段工时计一次，均值和方差只对达标路径计算。概率、分钟均值及平方分钟方差都是 `Fraction`。零达标时均值与方差为 `None`。
 
 确定性接力耗时依次为 1 和 2 分钟，应报 1、3、0。两站返流样例中，甲耗时 1 分钟进入乙，乙四次观察分别为达标 2 分钟、达标 2 分钟、返甲 0 分钟、报废 0 分钟。报告应为 2/3、10/3、4/9。达标条件下先返甲的次数服从公比 1/4 的几何权重。将乙的达标工时更正为 5 分钟后，新报告应为 2/3、19/3、4/9。
+
+## 达标工序抽核伴随件与票据
+
+- `rework.station.issue.issue_audit_companion(revisions, issued, evidence_id)` 读取原 V1 发行绑定的冻结修订，返回确定性的 UTF-8 JSON 伴随件字节；同一发行重复办理得到相同字节。伴随件只含公开身份、端口、`v1_sha256`、按入出口排序的工序加权质量行和规范 `digest`，私有工位、原始观察和站内路径不出站。
+- `rework.routing.audit_intake.receive_audit_companion(catalog, payload)` 要求对应 V1 已先实收，核验完整身份、V1 规范编码摘要和逐行对应关系后保存，返回伴随件摘要；同件重投返回原摘要，冲突拒收。每个 V1 发行只对应一个实收伴随件。
+- `rework.analysis.assessment.publish_audit_ticket(catalog, ledger, route_id, start, randbelow)` 在路由每个选件都有确切实收伴随件时，按“每条有限达标路径上每个工序位置与该路径原概率成正比”的口径签票。两端各用独立的 `randbelow(n)` 均匀回调。无达标路径返回 `None` 且不产生新票。票据含 `ticket_id`、`route_id`、`start`、按 `FrozenRoute.pieces` 排序的 `companions`、有序 `visits`、零基 `selected` 和顶层 `digest`，签存后返回。
+- `rework.report.ledger.read_audit_ticket(ledger, ticket_id)` 按票号读回签发时保存的原字典；勘误和中心库重开后仍可办理。
+- `rework.station.issue.redeem_audit_ticket(revisions, issued, evidence_id, ticket, randbelow)` 仅用原站两个存储对象，核对票摘要、所选次序、V1 发行、冻结修订和伴随件摘要后，按所选入出口的带标条件分布复演该次到访，返回有序 `Observation` 元组和唯一零基标记位置。原站可在中心关闭后兑换。
+
+`rework.analysis.sampling.categorical` 用分数的最小公倍数精确放大权重后调用回调，回调返回越界值或非整数抛 `ValueError`。结构、类型、摘要、端口或身份错配抛 `ValueError`；查无有效编号或缺少确切实收伴随件抛 `KeyError`。签存失败向上抛 SQLite 错误且无新增票，可重新办理。`python3 -B verify_audit.py` 以 AUDIT.md 样例核验全部抽核概率，`check_project.py` 在单元回归后串联同一核验。
 
 ## 重开和失败语义
 

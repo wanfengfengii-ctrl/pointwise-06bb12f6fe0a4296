@@ -14,6 +14,11 @@ class RoutingCatalog:
                 )
             ''')
             self.connection.execute('''
+                CREATE TABLE IF NOT EXISTS received_audit_companions (
+                    evidence_id TEXT PRIMARY KEY, payload BLOB NOT NULL, digest TEXT NOT NULL
+                )
+            ''')
+            self.connection.execute('''
                 CREATE TABLE IF NOT EXISTS frozen_routes (
                     route_id INTEGER PRIMARY KEY, payload TEXT NOT NULL
                 )
@@ -39,6 +44,29 @@ class RoutingCatalog:
         payload, digest = row
         if not isinstance(payload, bytes) or sha256(payload).hexdigest() != digest:
             raise ValueError('received evidence content has changed')
+        return payload
+
+    def put_companion(self, evidence_id: str, payload: bytes) -> None:
+        digest = sha256(payload).hexdigest()
+        self.connection.execute('BEGIN IMMEDIATE')
+        with self.connection:
+            self.connection.execute('''
+                INSERT INTO received_audit_companions VALUES (?, ?, ?)
+                ON CONFLICT(evidence_id) DO NOTHING
+            ''', (evidence_id, payload, digest))
+            if self.load_companion(evidence_id) != payload:
+                raise ValueError('fixed evidence number already has a different audit companion')
+
+    def load_companion(self, evidence_id: str) -> bytes:
+        row = self.connection.execute(
+            'SELECT payload, digest FROM received_audit_companions WHERE evidence_id = ?',
+            (evidence_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(evidence_id)
+        payload, digest = row
+        if not isinstance(payload, bytes) or sha256(payload).hexdigest() != digest:
+            raise ValueError('received audit companion content has changed')
         return payload
 
     def put_plan(self, payload: str) -> int:

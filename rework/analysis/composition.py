@@ -13,6 +13,7 @@ class AssessmentEdge:
     probability: Fraction
     first: Fraction
     second: Fraction
+    exit_port: str = ''
 
 
 @dataclass(frozen=True)
@@ -34,5 +35,7 @@ def compose_route(route: FrozenRoute, pieces: tuple[StationEvidence, ...]) -> As
         for row in piece.rows:
             entry = PortRef(number, row.entry)
             exit_ref = PortRef(number, row.exit)
-            outgoing[entry].append(AssessmentEdge(wiring[exit_ref], row.probability, row.first, row.second))
+            outgoing[entry].append(AssessmentEdge(
+                wiring[exit_ref], row.probability, row.first, row.second, row.exit
+            ))
     return AssessmentGraph({entry: tuple(edges) for entry, edges in outgoing.items()})

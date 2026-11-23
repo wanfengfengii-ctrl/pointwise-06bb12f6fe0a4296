@@ -1,4 +1,4 @@
-"""Run this project's full unittest suite from the repository root."""
+"""Run this project's full unittest suite and the AUDIT.md probability checks."""
 import sys
 import unittest
 
@@ -8,7 +8,7 @@ def main():
     if suite.countTestCases():
         result = unittest.TextTestRunner(verbosity=2).run(suite)
     else:
-        print('No tests discovered in tests/', file=sys.stderr)
+        print('No test discovered in tests/', file=sys.stderr)
         result = unittest.TestResult()
     for status, failed_cases in (
         ('FAIL', (test for test, _ in result.failures)),
@@ -23,7 +23,11 @@ def main():
           f'expected_failures={len(result.expectedFailures)} '
           f'unexpected_successes={len(result.unexpectedSuccesses)} '
           f'result={"PASS" if successful else "FAIL"}')
-    return 0 if successful else 1
+    if not successful:
+        return 1
+    import verify_audit
+    verify_audit.main()
+    return 0
 
 
 if __name__ == '__main__':
